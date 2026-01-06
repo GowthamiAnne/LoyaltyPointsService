@@ -5,6 +5,9 @@ import io.vertx.core.Vertx;
 import io.vertx.junit5.VertxTestContext;
 import org.junit.jupiter.api.Test;
 
+import com.airline.loyalty.model.PointsQuoteRequest;
+import com.airline.loyalty.testutils.PointsQuoteRequestBuilder;
+
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static io.restassured.RestAssured.given;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -19,22 +22,12 @@ class PointsQuoteHttpTest extends BaseComponentTest {
                 {"fromCurrency":"USD","toCurrency":"USD","rate":1.0,"timestamp":"2025-01-15T10:00:00Z"}
                 """)));
         promoServiceMock.stubFor(get(anyUrl()).willReturn(aResponse().withStatus(404)));
+        
+     // Build the request using builder
+        PointsQuoteRequest request = new PointsQuoteRequestBuilder()
+            .build();
 
-        var response = given()
-            .baseUri(baseUrl)
-            .contentType(ContentType.JSON)
-            .body("""
-                {
-                    "fareAmount": 1000.0,
-                    "currency": "USD",
-                    "cabinClass": "ECONOMY",
-                    "customerTier": "NONE",
-                    "promoCode": null
-                }
-                """)
-            .when()
-            .post("/v1/points/quote")
-            .then()
+        var response = postQuote(request)
             .statusCode(200)
             .header("Content-Type", containsString("application/json"))
             .extract().response();
@@ -53,19 +46,16 @@ class PointsQuoteHttpTest extends BaseComponentTest {
         promoServiceMock.stubFor(get(anyUrl()).willReturn(aResponse().withStatus(404)));
 
         String requestId = "test-request-123";
+     
+        // Build the request using builder
+        PointsQuoteRequest request = new PointsQuoteRequestBuilder()
+            .build();
+        
         var response = given()
             .baseUri(baseUrl)
             .contentType(ContentType.JSON)
             .header("X-Request-ID", requestId)
-            .body("""
-                {
-                    "fareAmount": 1000.0,
-                    "currency": "USD",
-                    "cabinClass": "ECONOMY",
-                    "customerTier": "SILVER",
-                    "promoCode": null
-                }
-                """)
+            .body(request)
             .when()
             .post("/v1/points/quote")
             .then()
@@ -84,22 +74,12 @@ class PointsQuoteHttpTest extends BaseComponentTest {
                 {"fromCurrency":"USD","toCurrency":"USD","rate":1.0,"timestamp":"2025-01-15T10:00:00Z"}
                 """)));
         promoServiceMock.stubFor(get(anyUrl()).willReturn(aResponse().withStatus(404)));
-
-        var response = given()
-            .baseUri(baseUrl)
-            .contentType(ContentType.JSON)
-            .body("""
-                {
-                    "fareAmount": 1000.0,
-                    "currency": "USD",
-                    "cabinClass": "ECONOMY",
-                    "customerTier": "GOLD",
-                    "promoCode": null
-                }
-                """)
-            .when()
-            .post("/v1/points/quote")
-            .then()
+        
+     // Build the request using builder
+        PointsQuoteRequest request = new PointsQuoteRequestBuilder()
+            .build();
+        
+        var response = postQuote(request)
             .statusCode(200)
             .extract().response();
 
