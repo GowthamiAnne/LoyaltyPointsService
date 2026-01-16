@@ -6,6 +6,9 @@ import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 
 import io.restassured.http.ContentType;
 import io.restassured.response.ValidatableResponse;
+import io.vertx.config.ConfigRetriever;
+import io.vertx.config.ConfigRetrieverOptions;
+import io.vertx.config.ConfigStoreOptions;
 import io.vertx.core.DeploymentOptions;
 import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonObject;
@@ -14,6 +17,9 @@ import io.vertx.junit5.VertxTestContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.net.ServerSocket;
 import java.io.IOException;
 import java.time.LocalDate;
@@ -24,6 +30,8 @@ import static io.restassured.RestAssured.given;
 
 @ExtendWith(VertxExtension.class)
 public abstract class BaseComponentTest {
+
+    private static final Logger logger = LoggerFactory.getLogger(BaseComponentTest.class);
     protected WireMockServer fxServiceMock;
     protected WireMockServer promoServiceMock;
     protected int appPort;
@@ -46,42 +54,54 @@ public abstract class BaseComponentTest {
 
         promoServiceMock = new WireMockServer(WireMockConfiguration.options().port(promoPort));
         promoServiceMock.start();
-
-        // Deploy verticle with test configuration
-        JsonObject config = new JsonObject()
-            .put("http", new JsonObject()
-                .put("port", appPort)
-                .put("host", "localhost"))
-            .put("fxService", new JsonObject()
-                .put("host", "localhost")
-                .put("port", fxPort)
-                .put("ssl", false)
-                .put("timeout", 3000)
-                .put("retries", 2)
-                .put("path", "/v1/rates"))
-            .put("promoService", new JsonObject()
-                .put("host", "localhost")
-                .put("port", promoPort)
-                .put("ssl", false)
-                .put("timeout", 2000)
-                .put("path", "/v1/promos"))
-            .put("business", new JsonObject()
-                .put("maxPoints", 50000)
-                .put("expiryWarningDays", 7)
-                .put("tierMultipliers", new JsonObject()
-                    .put("NONE", 0.0)
-                    .put("SILVER", 0.15)
-                    .put("GOLD", 0.30)
-                    .put("PLATINUM", 0.50)))
-            .put("observability", new JsonObject()
-                .put("metricsEnabled", true)
-                .put("metricsPort", metricsPort));
-        System.out.print("FX Service"+fxPort);
-        System.out.print("PROMO Service"+promoPort);
-        DeploymentOptions options = new DeploymentOptions().setConfig(config);
         
-        vertx.deployVerticle(new MainVerticle(), options)
-            .onComplete(testContext.succeedingThenComplete());
+     // Resolve profile (default = test)
+        String profile = System.getProperty(
+            "vertx.profile",
+            System.getenv().getOrDefault("VERTX_PROFILE", "test")
+        );
+
+        // Load profile config
+        ConfigStoreOptions fileStore = new ConfigStoreOptions()
+            .setType("file")
+            .setConfig(new JsonObject()
+                .put("path", "src/main/resources/application-" + profile + ".json"));
+
+        ConfigRetriever retriever = ConfigRetriever.create(
+            vertx,
+            new ConfigRetrieverOptions().addStore(fileStore)
+        );
+        
+        retriever.getConfig(ar -> {
+            if (ar.failed()) {
+                testContext.failNow(ar.cause());
+                return;
+            }
+
+            JsonObject config = ar.result();
+         // 🔹 Override dynamic test values
+            config.getJsonObject("http")
+                .put("port", appPort);
+
+            config.getJsonObject("fxService")
+                .put("port", fxPort);
+
+            config.getJsonObject("promoService")
+                .put("port", promoPort);
+            
+            config.getJsonObject("observability")
+            .put("host", "localhost")
+            .put("port", metricsPort);
+
+        logger.debug("FX Service Port"+fxPort);
+        logger.debug("PROMO Service Port"+promoPort);
+        
+        DeploymentOptions options =
+                new DeploymentOptions().setConfig(config);
+
+            vertx.deployVerticle(new MainVerticle(), options)
+                .onComplete(testContext.succeedingThenComplete());
+        });
     }
 
     @AfterEach
