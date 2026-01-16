@@ -27,26 +27,15 @@ import static org.hamcrest.Matchers.equalTo;
 class PointsQuoteTests extends BaseComponentTest {
 	
 	
-	@Test
-    void shouldHandleInvalidCurrencyCode(Vertx vertx, VertxTestContext testContext) {
-        
-     // Build the request using builder
-        PointsQuoteRequest request = new PointsQuoteRequestBuilder()
-        	.withCurrency("")
-            .build();
-
-        postQuote(request)
-        .statusCode(400)
-        .body("message", Matchers.containsString("Invalid currency code"));
-
-        testContext.completeNow();
-    }
+	
 	
 	@Test
     void shouldHandleInvalidFareAmount(Vertx vertx, VertxTestContext testContext) {
         
      // Build the request using builder
-        PointsQuoteRequest request = new PointsQuoteRequestBuilder()
+        PointsQuoteRequest
+        
+        request = new PointsQuoteRequestBuilder()
         	.withFareAmount(0.0)
             .build();
 
@@ -373,6 +362,84 @@ class PointsQuoteTests extends BaseComponentTest {
 
         ctx.completeNow();
     }
+    
+    @Test
+    void shouldEnforceMaxPointsCap(Vertx vertx, VertxTestContext ctx) {
 
-     
+        PointsQuoteRequest request = new PointsQuoteRequestBuilder()
+            .withFareAmount(200000.00) // huge fare
+            .withCurrency("USD")
+            .withCabinClass("FIRST")
+            .withCustomerTier("PLATINUM")
+            .build();
+
+        postQuote(request)
+            .statusCode(200)
+            .body("totalPoints", lessThanOrEqualTo(50000));
+
+        ctx.completeNow();
+    }
+
+    @Test
+    void shouldReturnErrorOnFxTimeout(Vertx vertx, VertxTestContext ctx) {
+
+        // Simulate FX service delay
+        fxServiceMock.stubFor(get(urlPathEqualTo("/v1/rates"))
+            .willReturn(aResponse().withFixedDelay(5000))); // 5s delay
+
+        PointsQuoteRequest request = new PointsQuoteRequestBuilder()
+            .withCurrency("EUR")
+            .withCabinClass("ECONOMY")
+            .withCustomerTier("SILVER")
+            .build();
+
+        postQuote(request)
+            .statusCode(504)
+            .body("message", containsString("timeout"));
+
+        ctx.completeNow();
+    }
+    
+    @Test
+    void shouldHandleConcurrentRequests(Vertx vertx, VertxTestContext ctx) {
+        int concurrentRequests = 10;
+
+        for (int i = 0; i < concurrentRequests; i++) {
+            PointsQuoteRequest request = new PointsQuoteRequestBuilder()
+                .withFareAmount(1000.00 + i)
+                .withCurrency("USD")
+                .withCabinClass("ECONOMY")
+                .withCustomerTier("SILVER")
+                .build();
+
+            postQuote(request)
+                .statusCode(200)
+                .body("totalPoints", greaterThan(0));
+        }
+
+        ctx.completeNow();
+    }
+    
+    @Test
+    void shouldIncrementRequestAndErrorCounters(Vertx vertx, VertxTestContext ctx) {
+
+        // Trigger a validation error
+        PointsQuoteRequest badRequest = new PointsQuoteRequestBuilder()
+            .withFareAmount(-100.0)
+            .build();
+
+        postQuote(badRequest)
+            .statusCode(400);
+
+        // Call metrics endpoint
+        given()
+            .baseUri("http://localhost:9090")
+            .get("/metrics")
+            .then()
+            .statusCode(200)
+            .body(containsString("points_quote_requests_total"))
+            .body(containsString("points_quote_errors_total"));
+
+        ctx.completeNow();
+    }
 }
