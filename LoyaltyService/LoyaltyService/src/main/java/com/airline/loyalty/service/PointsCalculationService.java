@@ -22,19 +22,21 @@ import java.util.List;
  */
 public class PointsCalculationService {
     private static final Logger logger = LoggerFactory.getLogger(PointsCalculationService.class);
-    private static final String BASE_CURRENCY = "USD";
     
     private final FxServiceClient fxService;
     private final PromoServiceClient promoService;
     private final int maxPoints;
     private final int expiryWarningDays;
+    private final String baseCurrency;
 
     public PointsCalculationService(FxServiceClient fxService, PromoServiceClient promoService, JsonObject config) {
         this.fxService = fxService;
         this.promoService = promoService;
         JsonObject businessConfig = config.getJsonObject("business");
+        JsonObject currencyConfig = config.getJsonObject("currency");
         this.maxPoints = businessConfig.getInteger("maxPoints");
         this.expiryWarningDays = businessConfig.getInteger("expiryWarningDays");
+        this.baseCurrency = currencyConfig.getString("base");
     }
 
     public Future<PointsCalculation> calculatePoints(PointsQuoteRequest request) {
@@ -44,13 +46,13 @@ public class PointsCalculationService {
             return Future.failedFuture(e);
         }
 
-        return convertToBaseCurrency(request.fareAmount(), request.currency())
+        return convertToBaseCurrency(request.getFareAmount(), request.getCurrency())
             .compose(convertedAmount -> {
                 int basePoints = (int) Math.floor(convertedAmount);
-                double fxRate = convertedAmount / request.fareAmount();
+                double fxRate = convertedAmount / request.getFareAmount();
                 
-                return calculateTierBonus(basePoints, request.customerTier())
-                    .compose(tierBonus -> calculatePromoBonus(basePoints, request.promoCode())
+                return calculateTierBonus(basePoints, request.getCustomerTier())
+                    .compose(tierBonus -> calculatePromoBonus(basePoints, request.getPromoCode())
                         .map(promoResult -> {
                             int totalBeforeCap = basePoints + tierBonus + promoResult.bonus();
                             int finalTotal = Math.min(totalBeforeCap, maxPoints);
@@ -75,33 +77,33 @@ public class PointsCalculationService {
     }
 
     private void validateRequest(PointsQuoteRequest request) {
-        if (request.fareAmount() == null || request.fareAmount() <= 0) {
+        if (request.getFareAmount() == null || request.getFareAmount() <= 0) {
             throw new ValidationException("Fare amount must be greater than zero");
         }
         
-        if (request.currency() == null || request.currency().length() != 3) {
+        if (request.getCurrency() == null || request.getCurrency().length() != 3) {
             throw new ValidationException("Invalid currency code");
         }
 
         try {
-            CabinClass.valueOf(request.cabinClass());
+            CabinClass.valueOf(request.getCabinClass());
         } catch (Exception e) {
-            throw new ValidationException("Invalid cabin class: " + request.cabinClass());
+            throw new ValidationException("Invalid cabin class: " + request.getCabinClass());
         }
 
         try {
-            CustomerTier.valueOf(request.customerTier());
+            CustomerTier.valueOf(request.getCustomerTier());
         } catch (Exception e) {
-            throw new ValidationException("Invalid customer tier: " + request.customerTier());
+            throw new ValidationException("Invalid customer tier: " + request.getCustomerTier());
         }
     }
 
     private Future<Double> convertToBaseCurrency(double amount, String currency) {
-        if (BASE_CURRENCY.equals(currency)) {
+        if (baseCurrency.equals(currency)) {
             return Future.succeededFuture(amount);
         }
 
-        return fxService.getExchangeRate(currency, BASE_CURRENCY)
+        return fxService.getExchangeRate(currency, baseCurrency)
             .map(rate -> amount * rate);
     }
 
