@@ -25,7 +25,6 @@ public class Main {
             .setConfig(new JsonObject()
                 .put("path", "src/main/resources/application-" + profile + ".json"));
 
-        System.out.println(profile+"profile");
         ConfigRetriever retriever = ConfigRetriever.create(
             vertx,
             new ConfigRetrieverOptions().addStore(fileStore)
